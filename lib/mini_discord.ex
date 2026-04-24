@@ -2,6 +2,10 @@ defmodule MiniDiscord do
   use Application
 
   def start(_type, _args) do
+    if :ets.whereis(:pseudos) == :undefined do
+      :ets.new(:pseudos, [:named_table, :public, :set])
+    end
+
     children = [
       {Registry, keys: :unique, name: MiniDiscord.Registry},
       {DynamicSupervisor, strategy: :one_for_one, name: MiniDiscord.SalonSupervisor},
@@ -12,4 +16,5 @@ defmodule MiniDiscord do
     opts = [strategy: :one_for_one, name: MiniDiscord.Supervisor]
     Supervisor.start_link(children, opts)
   end
+
 end
