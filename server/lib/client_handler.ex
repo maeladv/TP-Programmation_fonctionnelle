@@ -68,6 +68,7 @@ defmodule MiniDiscord.ClientHandler do
         Logger.info("Client déconnecté : #{inspect(reason)}")
         MiniDiscord.Salon.broadcast(salon, "👋 #{pseudo} a quitté ##{salon}\r\n")
         MiniDiscord.Salon.quitter(salon, self())
+        liberer_pseudo(pseudo)
     end
   end
 

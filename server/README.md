@@ -1,6 +1,8 @@
 # TP-Programmation_fonctionnelle
 ## ADVISSE Maël
 
+## Server
+
 ### Partie 1
 
 *Q1. Pourquoi utilise-t-on Process.monitor/1 dans handle_call({:rejoindre}) ?*

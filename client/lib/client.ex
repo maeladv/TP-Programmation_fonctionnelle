@@ -13,21 +13,32 @@ defmodule MiniDiscord.Client do
     # TODO : Lancer le receiver dans un Task.async : fn -> receive_loop(socket) end
     # TODO : Lancer le sender dans un Task.async : fn -> send_loop(socket) end
     # TODO : Attendre les deux tasks avec Task.await/2 (timeout: :infinity)
+    connect_with_retry(host, port, 1)
+  end
+
+  defp connect_with_retry(host, port, attempt) do
+      # TODO : Tenter :gen_tcp.connect avec les bonnes options
+      # TODO : Si {:ok, socket} -> handshake(socket) puis lancer les deux loops
+      # TODO : Si {:error, reason} ->
+      # TODO :   Afficher "Tentative #{attempt} échouée : #{reason}"
+      # TODO :   Attendre 2 secondes avec :timer.sleep(2000)
+      # TODO :   Rappeler connect_with_retry(host, port, attempt + 1)
       options = [:binary, packet: :line, active: false]
 
       case :gen_tcp.connect(host, port, options) do
           {:ok, socket} ->
               rencontre(socket)
 
-              receiver = Task.async(fn -> receive_loop(socket) end)
+              receiver = Task.async(fn -> receive_loop(socket, host, port) end)
               sender = Task.async(fn -> send_loop(socket) end)
 
               Task.await(receiver, :infinity)
               Task.await(sender, :infinity)
 
           {:error, reason} ->
-              IO.puts("Erreur de connexion: #{inspect(reason)}")
-              {:error, reason}
+          IO.puts("Tentative #{attempt} échouée : #{inspect(reason)}")
+          :timer.sleep(2000)
+          connect_with_retry(host, port, attempt + 1)
       end
   end
 
@@ -57,7 +68,7 @@ defmodule MiniDiscord.Client do
       recv_print(socket)
   end
 
-  defp receive_loop(socket) do
+  defp receive_loop(socket, host, port) do
       # TODO : Appeler :gen_tcp.recv(socket, 0) — bloquant jusqu'à réception
       # TODO : Si {:ok, msg} -> afficher avec IO.write/1 et rappeler receive_loop
       # TODO : Si {:error, _} -> afficher "Déconnecté" et arrêter
@@ -65,10 +76,14 @@ defmodule MiniDiscord.Client do
       case :gen_tcp.recv(socket, 0) do
         {:ok, msg} ->
           IO.write(msg)
-          receive_loop(socket)
+          receive_loop(socket, host, port)
 
-        {:error, _} ->
-          IO.write("Déconecté")
+        {:error, reason} ->
+          IO.puts("\nConnexion perdue (#{reason}). Reconnexion...")
+          # TODO : Fermer proprement la socket avec :gen_tcp.close/1
+          # TODO : Rappeler connect_with_retry(host, port, 1)
+          :gen_tcp.close(socket)
+          connect_with_retry(host, port, 1)
         end
   end
 
@@ -77,9 +92,39 @@ defmodule MiniDiscord.Client do
       # TODO : Envoyer au serveur avec :gen_tcp.send/2
       # TODO : Rappeler send_loop(socket)
 
-      msg = IO.gets("")
-      :gen_tcp.send(socket, msg)
-      send_loop(socket)
+      case IO.gets("") do
+        nil ->
+          :ok
+
+        msg ->
+          case valider_message(msg) do
+            {:ok, msg_valide} ->
+              :gen_tcp.send(socket, msg_valide)
+
+            {:error, reason} ->
+              IO.puts(reason)
+          end
+
+          send_loop(socket)
+      end
+  end
+
+  defp valider_message(msg) do
+    msg = String.trim(msg)
+
+    cond do
+      msg == "" ->
+        {:error, "Message vide"}
+
+      String.length(msg) > 500 ->
+        {:error, "Message trop long (max 500 chars)"}
+
+      String.match?(msg, ~r/[\\<>]/) ->
+        {:error, "Le Message contient des caractères interdits"}
+
+      true ->
+        {:ok, msg <> "\r\n"}
+    end
   end
 
   defp recv_print(socket) do
