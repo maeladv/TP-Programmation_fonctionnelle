@@ -55,9 +55,12 @@ defmodule MiniDiscord.ClientHandler do
         msg = String.trim(msg)
 
         if String.starts_with?(msg, "/") do
+          # Les commandes restent en clair côté serveur
           gerer_commande(socket, pseudo, salon, msg)
         else
-          MiniDiscord.Salon.broadcast(salon, "[#{pseudo}] #{msg}\r\n")
+          # Les messages sont chiffrés par le client, on les rebroadcast tel quel
+          # sans déchiffrer (le serveur ne voit pas le contenu)
+          MiniDiscord.Salon.broadcast(salon, msg <> "\r\n")
           loop(socket, pseudo, salon)
         end
 

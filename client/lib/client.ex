@@ -1,5 +1,7 @@
 defmodule MiniDiscord.Client do
 
+  @cle Base.decode16!("0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
+
   @doc """
   Point d'entrée principal du client.
   host : nom type 'xxxbore.pub'
@@ -27,10 +29,10 @@ defmodule MiniDiscord.Client do
 
       case :gen_tcp.connect(host, port, options) do
           {:ok, socket} ->
-              rencontre(socket)
+              pseudo = rencontre(socket)
 
               receiver = Task.async(fn -> receive_loop(socket, host, port) end)
-              sender = Task.async(fn -> send_loop(socket) end)
+              sender = Task.async(fn -> send_loop(socket, pseudo) end)
 
               Task.await(receiver, :infinity)
               Task.await(sender, :infinity)
@@ -66,6 +68,8 @@ defmodule MiniDiscord.Client do
       :gen_tcp.send(socket, salon)
 
       recv_print(socket)
+
+      String.trim(pseudo)
   end
 
   defp receive_loop(socket, host, port) do
@@ -75,7 +79,11 @@ defmodule MiniDiscord.Client do
 
       case :gen_tcp.recv(socket, 0) do
         {:ok, msg} ->
-          IO.write(msg)
+          msg_trim = String.trim(msg)
+          case dechiffrer_message(msg_trim) do
+            {:error, _} -> IO.write(msg)
+            msg_clair -> IO.write(msg_clair)
+          end
           receive_loop(socket, host, port)
 
         {:error, reason} ->
@@ -87,7 +95,7 @@ defmodule MiniDiscord.Client do
         end
   end
 
-  defp send_loop(socket) do
+  defp send_loop(socket, pseudo) do
       # TODO : Lire depuis le clavier avec IO.gets("")
       # TODO : Envoyer au serveur avec :gen_tcp.send/2
       # TODO : Rappeler send_loop(socket)
@@ -97,15 +105,25 @@ defmodule MiniDiscord.Client do
           :ok
 
         msg ->
-          case valider_message(msg) do
-            {:ok, msg_valide} ->
-              :gen_tcp.send(socket, msg_valide)
+          msg_trim = String.trim(msg)
 
-            {:error, reason} ->
-              IO.puts(reason)
+          if String.starts_with?(msg_trim, "/") do
+            # Les commandes s'envoient en clair
+            :gen_tcp.send(socket, msg_trim <> "\r\n")
+          else
+            # Les messages utilisateurs sont chiffrés avec le pseudo
+            case valider_message(msg) do
+              {:ok, msg_valide} ->
+                msg_formate = "[#{pseudo}] #{msg_valide}"
+                msg_chiffre = chiffrer_message(msg_formate)
+                :gen_tcp.send(socket, msg_chiffre <> "\r\n")
+
+              {:error, reason} ->
+                IO.puts(reason)
+            end
           end
 
-          send_loop(socket)
+          send_loop(socket, pseudo)
       end
   end
 
@@ -131,6 +149,22 @@ defmodule MiniDiscord.Client do
     {:ok, msg} = :gen_tcp.recv(socket, 0)
     IO.write(msg)
     msg  # return the trimmed message for later use if needed
+  end
+
+  defp chiffrer_message(msg) do
+    iv = :crypto.strong_rand_bytes(16)
+    msg_chiffre = :crypto.crypto_one_time(:aes_256_ctr, @cle, iv, msg, true)
+    Base.encode64(iv <> msg_chiffre)
+  end
+
+  defp dechiffrer_message(msg_encode) do
+    case Base.decode64(msg_encode) do
+      {:ok, msg_binaire} when byte_size(msg_binaire) > 16 ->
+        <<iv::binary-size(16), msg_chiffre::binary>> = msg_binaire
+        :crypto.crypto_one_time(:aes_256_ctr, @cle, iv, msg_chiffre, false)
+      _ ->
+        {:error, "Impossible de déchiffrer"}
+    end
   end
 
 end
