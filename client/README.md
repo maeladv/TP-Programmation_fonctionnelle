@@ -36,3 +36,23 @@ Les messages contenant des caratères interdit ne s'envoient pas
 
 ### Cryptographie
 
+``` elixir
+defp chiffrer_message(msg) do
+    iv = :crypto.strong_rand_bytes(16)
+    msg_chiffre = :crypto.crypto_one_time(:aes_256_ctr, @cle, iv, msg, true)
+    Base.encode64(iv <> msg_chiffre)
+  end
+
+  defp dechiffrer_message(msg_encode) do
+    case Base.decode64(msg_encode) do
+      {:ok, msg_binaire} when byte_size(msg_binaire) > 16 ->
+        <<iv::binary-size(16), msg_chiffre::binary>> = msg_binaire
+        :crypto.crypto_one_time(:aes_256_ctr, @cle, iv, msg_chiffre, false)
+      _ ->
+        {:error, "Impossible de déchiffrer"}
+    end
+  end
+```
+
+Avant d'envoyer un message, le client le chiffre puis l'encode en base64.
+Puis pour lire un message recu, le client decode le base64 et dechiffre le message pour avoir le contenu en clair
